@@ -1,4 +1,4 @@
-package msg
+package validator
 
 /*
  * :field - e.Field | User
@@ -6,7 +6,7 @@ package msg
  * :param - e.Param | 10
  * :value - e.Value | jaynarol
  */
-var En = map[string]string{
+var MsgEn = map[string]string{
 	"required":     `The :field field is required.`,
 	"len":          `The :field must size be :param.`,
 	"min":          `The :field must be at least :param.`,
