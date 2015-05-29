@@ -178,24 +178,29 @@ func (v *Validate) AddFunctionWithMsg(key string, f Func, msg string) error {
 	return nil
 }
 
+
+func (v *Validate) StructMerge(master interface{}, merge interface{}) *StructErrors {
+	return v.structRecursive(merge, merge, merge, master)
+}
+
 // Struct validates a struct, even it's nested structs, and returns a struct containing the errors
 // NOTE: Nested Arrays, or Maps of structs do not get validated only the Array or Map itself; the reason is that there is no good
 // way to represent or report which struct within the array has the error, besides can validate the struct prior to adding it to
 // the Array or Map.
 func (v *Validate) Struct(s interface{}) *StructErrors {
 
-	return v.structRecursive(s, s, s)
+	return v.structRecursive(s, s, s, nil)
 }
 
 // structRecursive validates a struct recursivly and passes the top level and current struct around for use in validator functions and returns a struct containing the errors
-func (v *Validate) structRecursive(top interface{}, current interface{}, s interface{}) *StructErrors {
+func (v *Validate) structRecursive(top interface{}, current interface{}, s interface{}, master interface{}) *StructErrors {
 
 	structValue := reflect.ValueOf(s)
 	structType := reflect.TypeOf(s)
 	structName := structType.Name()
 
 	if structValue.Kind() == reflect.Ptr && !structValue.IsNil() {
-		return v.structRecursive(top, current, structValue.Elem().Interface())
+		return v.structRecursive(top, current, structValue.Elem().Interface(), master)
 	}
 
 	if structValue.Kind() != reflect.Struct && structValue.Kind() != reflect.Interface {
@@ -230,6 +235,14 @@ func (v *Validate) structRecursive(top interface{}, current interface{}, s inter
 			continue
 		}
 
+		// merge tag from master if found same field name
+		if(master != nil){
+			mField, canmerge := reflect.ValueOf(master).Elem().Type().FieldByName(typeField.Name)
+			if(canmerge && len(mField.Tag.Get(v.tagName))!=0 ){
+				tag = mField.Tag.Get(v.tagName) + "," + tag
+			}
+		}
+
 		switch valueField.Kind() {
 
 		case reflect.Struct, reflect.Interface:
@@ -252,7 +265,7 @@ func (v *Validate) structRecursive(top interface{}, current interface{}, s inter
 					continue
 				}
 
-				if structErrors := v.structRecursive(top, valueField.Interface(), valueField.Interface()); structErrors != nil {
+				if structErrors := v.structRecursive(top, valueField.Interface(), valueField.Interface(), master); structErrors != nil {
 					validationErrors.StructErrors[typeField.Name] = structErrors
 					// free up memory map no longer needed
 					structErrors = nil
