@@ -25,7 +25,7 @@ const (
 	tagKeySeparator = "="
 	structOnlyTag   = "structonly"
 	omitempty       = "omitempty"
-	fieldErrMsg     = "Field validation for \"%s\" failed on the \"%s\" tag"
+	fieldErrMsg     = "Field \"%s\" failed on the \"%s\" tag"
 	structErrMsg    = "Struct:%s\n"
 )
 
@@ -37,13 +37,21 @@ type FieldError struct {
 	Kind  reflect.Kind
 	Type  reflect.Type
 	Param string
+	Msg string
 	Value interface{}
 }
 
 // This is intended for use in development + debugging and not intended to be a production error message.
 // it also allows FieldError to be used as an Error interface
 func (e *FieldError) Error() string {
-	return fmt.Sprintf(fieldErrMsg, e.Field, e.Tag)
+	if( len(e.Msg) == 0 ){
+		return fmt.Sprintf(fieldErrMsg, e.Field, e.Tag)
+	}
+	e.Msg = strings.Replace(e.Msg, ":field", e.Field, -1)
+	e.Msg = strings.Replace(e.Msg, ":tag", e.Tag, -1)
+	e.Msg = strings.Replace(e.Msg, ":param", e.Param, -1)
+	e.Msg = strings.Replace(e.Msg, ":value", e.Value.(string), -1)
+	return e.Msg
 }
 
 // StructErrors is hierarchical list of field and struct validation errors
@@ -61,7 +69,7 @@ type StructErrors struct {
 // This is intended for use in development + debugging and not intended to be a production error message.
 // it also allows StructErrors to be used as an Error interface
 func (e *StructErrors) Error() string {
-	buff := bytes.NewBufferString(fmt.Sprintf(structErrMsg, e.Struct))
+	buff := bytes.NewBufferString("")
 
 	for _, err := range e.Errors {
 		buff.WriteString(err.Error())
@@ -120,13 +128,24 @@ type Validate struct {
 	tagName string
 	// validateFuncs is a map of validation functions and the tag keys
 	validationFuncs map[string]Func
+	// validate massage for custome err
+	validationMsgs map[string]string
 }
 
 // New creates a new Validate instance for use.
-func New(tagName string, funcs map[string]Func) *Validate {
+func New(tagName string, funcs map[string]Func ) *Validate {
 	return &Validate{
 		tagName:         tagName,
 		validationFuncs: funcs,
+	}
+}
+
+// New creates a new Validate instance for use with custom error message.
+func NewWithMsg(tagName string, funcs map[string]Func, msgs map[string]string ) *Validate {
+	return &Validate{
+		tagName:         tagName,
+		validationFuncs: funcs,
+		validationMsgs: msgs,
 	}
 }
 
@@ -140,6 +159,11 @@ func (v *Validate) SetTag(tagName string) {
 // NOTE: if the key already exists, it will get replaced.
 func (v *Validate) AddFunction(key string, f Func) error {
 
+	return v.AddFunctionWithMsg(key, f, "")
+}
+
+func (v *Validate) AddFunctionWithMsg(key string, f Func, msg string) error {
+
 	if len(key) == 0 {
 		return errors.New("Function Key cannot be empty")
 	}
@@ -149,6 +173,7 @@ func (v *Validate) AddFunction(key string, f Func) error {
 	}
 
 	v.validationFuncs[key] = f
+	v.validationMsgs[key] = msg
 
 	return nil
 }
@@ -345,11 +370,17 @@ func (v *Validate) fieldWithNameAndSingleTag(val interface{}, current interface{
 		panic(fmt.Sprintf("Invalid validation tag on field %s", name))
 	}
 
+	msg := ""
+	if(len(v.validationMsgs[key]) > 0){
+		msg = v.validationMsgs[key]
+	}
+
 	valErr := &FieldError{
 		Field: name,
 		Tag:   key,
 		Value: f,
 		Param: "",
+		Msg: msg,
 	}
 
 	// OK to continue because we checked it's existance before getting into this loop
